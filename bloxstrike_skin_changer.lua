@@ -1,21 +1,22 @@
---// Script by twistedk1d
-
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/twistedk1d/BloxStrike/refs/heads/main/Source/UI/source.lua"))() --// UI Library Rayfield
+
+--// Toggle keybind (modifiable)
+local toggleKey = Enum.KeyCode.F5
 
 --// Window creation
 local Window = Rayfield:CreateWindow({
     Name = "[📜] Blox Strike",
     Icon = 0,
     LoadingTitle = "[📜] Blox Strike",
-    LoadingSubtitle = "by twistedk1d",
+    LoadingSubtitle = "by laysox",
     ShowText = "Script",
     Theme = "Default",
-    ToggleUIKeybind = Enum.KeyCode.F5,
+    ToggleUIKeybind = toggleKey,
     DisableRayfieldPrompts = false,
     DisableBuildWarnings = false,
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "twistedk1d",
+        FolderName = "laysox",
         FileName = "BloxStrike"
     }
 })
@@ -23,10 +24,27 @@ local Window = Rayfield:CreateWindow({
 --// Info Tab
 local Tab_Info = Window:CreateTab("Info", "info")
 
-Tab_Info:CreateLabel("Script developed by twistedk1d",        "code",     Color3.fromRGB(80,80,80), false)
+Tab_Info:CreateLabel("Script developed by laysox",        "code",     Color3.fromRGB(80,80,80), false)
 Tab_Info:CreateLabel("All scripts were written manually",     "terminal", Color3.fromRGB(80,80,80), false)
 Tab_Info:CreateLabel("Specifically for Blox Strike",          "crosshair",Color3.fromRGB(80,80,80), false)
-Tab_Info:CreateLabel("Thank you for using our script",        "heart",    Color3.fromRGB(80,80,80), false)
+Tab_Info:CreateLabel("Thank you for using my script",        "heart",    Color3.fromRGB(80,80,80), false)
+
+--// =====================================================
+--// Keybind pour minimiser / rouvrir l'UI (modifiable)
+--// =====================================================
+Tab_Info:CreateSection("Settings")
+
+Tab_Info:CreateKeybind({
+    Name = "Toggle UI",
+    CurrentKeybind = "F5",
+    HoldToInteract = false,
+    Flag = "ToggleUIKeybind",
+    Callback = function(keybind)
+        -- Met à jour la touche utilisée pour toggle l'UI
+        toggleKey = Enum.KeyCode[keybind]
+        Window:ToggleUI() -- ouvre/ferme l'UI à chaque appui
+    end
+})
 --\\
 
 --// Skins Tab
@@ -50,10 +68,22 @@ local RunService    = game:GetService("RunService")
 local TweenService  = game:GetService("TweenService")
 local CAS           = game:GetService("ContextActionService")
 local Players       = game:GetService("Players")
+local UIS           = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local Characters = workspace:WaitForChild("Characters")
+
+--// =====================================================
+--// Gestion manuelle du toggle keybind (via UIS)
+--// =====================================================
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == toggleKey then
+        Window:ToggleUI()
+    end
+end)
+--\\
 
 --// Remove BasePart Karambit
 RS.Assets.Weapons.Karambit.Camera.ViewmodelLight.Transparency = 1
