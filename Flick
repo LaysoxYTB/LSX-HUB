@@ -1,0 +1,664 @@
+-- ============================================================
+--  UI : Linoria Rewrite (violin-suzutsuki)
+-- ============================================================
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                      SERVICES                           │
+-- └─────────────────────────────────────────────────────────┘
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local Workspace        = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui          = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera      = Workspace.CurrentCamera
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │            CHARGEMENT LINORIA REWRITE                   │
+-- └─────────────────────────────────────────────────────────┘
+local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
+
+local Library     = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local ThemeMgr    = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                  PARAMETRES ESP                         │
+-- └─────────────────────────────────────────────────────────┘
+local ESP = {
+    Enabled       = false,
+    LimitDistance = 2000,
+    TeamCheck     = false,
+    TextSize      = 13,
+    Font          = 2,
+
+    Box      = { Enabled = false, Color = Color3.fromRGB(255,255,255), Outline = true },
+    BoxFill  = { Enabled = false, Color = Color3.fromRGB(255,255,255), Transparency = 0.5 },
+    Name     = { Enabled = false, Color = Color3.fromRGB(255,255,255) },
+    Distance = { Enabled = false, Color = Color3.fromRGB(200,200,200) },
+    HealthBar= { Enabled = false },
+    Tracer   = { Enabled = false, Origin = "Bottom", Color = Color3.fromRGB(255,255,255) },
+    Skeleton = { Enabled = false, Color = Color3.fromRGB(255,255,255), Thickness = 1 },
+
+    Chams = {
+        Enabled             = false,
+        FillColor           = Color3.fromRGB(255, 0, 0),
+        OutlineColor        = Color3.fromRGB(255,255,255),
+        FillTransparency    = 0.5,
+        OutlineTransparency = 0
+    }
+}
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                PARAMETRES AIMBOT                        │
+-- └─────────────────────────────────────────────────────────┘
+local Aimbot = {
+    Enabled          = false,
+    ToggleMode       = false,
+    TeamCheck        = false,
+    VisibleCheck     = false,
+    AimPart          = "Head",
+    FOV              = 160,
+    FOV_Enabled      = false,
+    FOV_Color        = Color3.fromRGB(255, 0, 255),
+    FOV_LockedColor  = Color3.fromRGB(0, 255, 0),
+    Smoothness       = 10,
+    Prediction       = false,
+    PredictionAmount = 0.142
+}
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                    CORE ESP                             │
+-- └─────────────────────────────────────────────────────────┘
+local ESP_Cache = {}
+
+local function NewDrawing(Type, Props)
+    local obj = Drawing.new(Type)
+    for k, v in pairs(Props) do obj[k] = v end
+    return obj
+end
+
+local function CreateESP(Player)
+    local O = {
+        Box              = NewDrawing("Square", {Thickness=1,   ZIndex=2, Visible=false}),
+        BoxOutline       = NewDrawing("Square", {Thickness=3,   Color=Color3.new(0,0,0), ZIndex=1, Visible=false}),
+        BoxFill          = NewDrawing("Square", {Filled=true,   ZIndex=0, Visible=false}),
+        Name             = NewDrawing("Text",   {Text=Player.Name, Center=true, Size=ESP.TextSize, Font=ESP.Font, Outline=true, ZIndex=3, Visible=false}),
+        Distance         = NewDrawing("Text",   {Center=true,   Size=ESP.TextSize-1, Font=ESP.Font, Outline=true, ZIndex=3, Visible=false}),
+        HealthBar        = NewDrawing("Square", {Filled=true,   ZIndex=2, Visible=false}),
+        HealthBarOutline = NewDrawing("Square", {Filled=true,   Color=Color3.new(0,0,0), ZIndex=1, Visible=false}),
+        Tracer           = NewDrawing("Line",   {Thickness=1,   ZIndex=2, Visible=false}),
+        TracerOutline    = NewDrawing("Line",   {Thickness=3,   Color=Color3.new(0,0,0), ZIndex=1, Visible=false}),
+        SkeletonLines    = {},
+        Highlight        = nil
+    }
+    for _ = 1, 20 do
+        table.insert(O.SkeletonLines, NewDrawing("Line", {Thickness=1, ZIndex=2, Visible=false}))
+    end
+    ESP_Cache[Player] = O
+end
+
+local function RemoveESP(Player)
+    local O = ESP_Cache[Player]
+    if not O then return end
+    for k, v in pairs(O) do
+        if k == "Highlight" and v then
+            pcall(function() v:Destroy() end)
+        elseif k == "SkeletonLines" then
+            for _, l in pairs(v) do pcall(function() l:Remove() end) end
+        elseif v and v.Remove then
+            pcall(function() v:Remove() end)
+        end
+    end
+    ESP_Cache[Player] = nil
+end
+
+local SkeletonBones = {
+    {"Head","UpperTorso"},
+    {"UpperTorso","LowerTorso"},
+    {"UpperTorso","LeftUpperArm"},   {"LeftUpperArm","LeftLowerArm"},    {"LeftLowerArm","LeftHand"},
+    {"UpperTorso","RightUpperArm"},  {"RightUpperArm","RightLowerArm"},  {"RightLowerArm","RightHand"},
+    {"LowerTorso","LeftUpperLeg"},   {"LeftUpperLeg","LeftLowerLeg"},    {"LeftLowerLeg","LeftFoot"},
+    {"LowerTorso","RightUpperLeg"},  {"RightUpperLeg","RightLowerLeg"},  {"RightLowerLeg","RightFoot"},
+    {"Head","Torso"},
+    {"Torso","Left Arm"},  {"Torso","Right Arm"},
+    {"Torso","Left Leg"},  {"Torso","Right Leg"}
+}
+
+RunService.RenderStepped:Connect(function()
+    local lChar = LocalPlayer.Character
+    local lRoot = lChar and lChar:FindFirstChild("HumanoidRootPart")
+
+    for Player, O in pairs(ESP_Cache) do
+        local char = Player.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+
+        local valid    = ESP.Enabled and char and hum and root and hum.Health > 0
+        local teammate = ESP.TeamCheck and Player.Team == LocalPlayer.Team
+
+        local function hideAll()
+            for k, v in pairs(O) do
+                if k == "SkeletonLines" then
+                    for _, l in pairs(v) do l.Visible = false end
+                elseif k ~= "Highlight" and v and typeof(v) ~= "Instance" then
+                    v.Visible = false
+                end
+            end
+        end
+
+        if valid and not teammate then
+            -- Chams
+            if ESP.Chams.Enabled then
+                if not O.Highlight or not O.Highlight.Parent then
+                    pcall(function() if O.Highlight then O.Highlight:Destroy() end end)
+                    local hl = Instance.new("Highlight")
+                    hl.Parent    = char
+                    hl.Adornee   = char
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    O.Highlight  = hl
+                end
+                local hl = O.Highlight
+                hl.FillColor           = ESP.Chams.FillColor
+                hl.OutlineColor        = ESP.Chams.OutlineColor
+                hl.FillTransparency    = ESP.Chams.FillTransparency
+                hl.OutlineTransparency = ESP.Chams.OutlineTransparency
+                hl.Enabled = true
+            else
+                if O.Highlight then
+                    pcall(function() O.Highlight:Destroy() end)
+                    O.Highlight = nil
+                end
+            end
+
+            local hrp3, onScreen = Camera:WorldToViewportPoint(root.Position)
+            local dist = lRoot and (lRoot.Position - root.Position).Magnitude or 0
+
+            if onScreen and dist <= ESP.LimitDistance then
+                local sf   = 1 / (hrp3.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 1000
+                local W    = math.floor(4 * sf)
+                local H    = math.floor(6 * sf)
+                local bPos = Vector2.new(math.floor(hrp3.X - W * 0.5), math.floor(hrp3.Y - H * 0.5))
+                local c2d  = Vector2.new(hrp3.X, hrp3.Y)
+
+                if ESP.Box.Enabled then
+                    O.Box.Size=Vector2.new(W,H); O.Box.Position=bPos
+                    O.Box.Color=ESP.Box.Color;   O.Box.Visible=true
+                    O.BoxOutline.Size=Vector2.new(W,H); O.BoxOutline.Position=bPos
+                    O.BoxOutline.Visible=ESP.Box.Outline
+                else O.Box.Visible=false; O.BoxOutline.Visible=false end
+
+                if ESP.BoxFill.Enabled and ESP.Box.Enabled then
+                    O.BoxFill.Size=Vector2.new(W,H); O.BoxFill.Position=bPos
+                    O.BoxFill.Color=ESP.BoxFill.Color
+                    O.BoxFill.Transparency=ESP.BoxFill.Transparency
+                    O.BoxFill.Visible=true
+                else O.BoxFill.Visible=false end
+
+                if ESP.Name.Enabled then
+                    O.Name.Position=Vector2.new(bPos.X+W/2, bPos.Y-O.Name.TextBounds.Y-2)
+                    O.Name.Color=ESP.Name.Color; O.Name.Visible=true
+                else O.Name.Visible=false end
+
+                if ESP.Distance.Enabled then
+                    O.Distance.Text=math.floor(dist).."m"
+                    O.Distance.Position=Vector2.new(bPos.X+W/2, bPos.Y+H+2)
+                    O.Distance.Color=ESP.Distance.Color; O.Distance.Visible=true
+                else O.Distance.Visible=false end
+
+                if ESP.HealthBar.Enabled then
+                    local bw = 2
+                    local hy = H * (hum.Health / hum.MaxHealth)
+                    O.HealthBarOutline.Size=Vector2.new(bw+2,H+2)
+                    O.HealthBarOutline.Position=Vector2.new(bPos.X-bw-6, bPos.Y-1)
+                    O.HealthBarOutline.Visible=true
+                    O.HealthBar.Size=Vector2.new(bw, hy)
+                    O.HealthBar.Position=Vector2.new(bPos.X-bw-5, bPos.Y+(H-hy))
+                    O.HealthBar.Color=Color3.fromHSV((hum.Health/hum.MaxHealth)*0.3, 1, 1)
+                    O.HealthBar.Visible=true
+                else O.HealthBar.Visible=false; O.HealthBarOutline.Visible=false end
+
+                if ESP.Tracer.Enabled then
+                    local origin = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                    if ESP.Tracer.Origin == "Center" then
+                        origin = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+                    elseif ESP.Tracer.Origin == "Mouse" then
+                        local m = UserInputService:GetMouseLocation()
+                        origin  = Vector2.new(m.X, m.Y)
+                    end
+                    O.Tracer.From=origin; O.Tracer.To=c2d
+                    O.Tracer.Color=ESP.Tracer.Color; O.Tracer.Visible=true
+                    O.TracerOutline.From=origin; O.TracerOutline.To=c2d
+                    O.TracerOutline.Visible=true
+                else O.Tracer.Visible=false; O.TracerOutline.Visible=false end
+
+                if ESP.Skeleton.Enabled then
+                    local idx = 1
+                    for _, pair in ipairs(SkeletonBones) do
+                        local p1 = char:FindFirstChild(pair[1])
+                        local p2 = char:FindFirstChild(pair[2])
+                        if p1 and p2 then
+                            local sp1, os1 = Camera:WorldToViewportPoint(p1.Position)
+                            local sp2, os2 = Camera:WorldToViewportPoint(p2.Position)
+                            if os1 or os2 then
+                                local line = O.SkeletonLines[idx]
+                                if line then
+                                    line.From=Vector2.new(sp1.X,sp1.Y)
+                                    line.To=Vector2.new(sp2.X,sp2.Y)
+                                    line.Color=ESP.Skeleton.Color
+                                    line.Thickness=ESP.Skeleton.Thickness
+                                    line.Visible=true
+                                    idx = idx + 1
+                                end
+                            end
+                        end
+                    end
+                    for i = idx, #O.SkeletonLines do O.SkeletonLines[i].Visible=false end
+                else
+                    for _, l in pairs(O.SkeletonLines) do l.Visible=false end
+                end
+            else
+                hideAll()
+            end
+        else
+            hideAll()
+            if O.Highlight then
+                pcall(function() O.Highlight:Destroy() end)
+                O.Highlight = nil
+            end
+        end
+    end
+end)
+
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(RemoveESP)
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then CreateESP(p) end
+end
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                   CERCLE FOV                            │
+-- └─────────────────────────────────────────────────────────┘
+local oldFov = CoreGui:FindFirstChild("LSX_FOV")
+if oldFov then oldFov:Destroy() end
+
+local FOV_Gui = Instance.new("ScreenGui")
+FOV_Gui.Name           = "LSX_FOV"
+FOV_Gui.ResetOnSpawn   = false
+FOV_Gui.IgnoreGuiInset = true
+FOV_Gui.DisplayOrder   = 9999
+FOV_Gui.Parent         = CoreGui
+
+local FOV_Frame = Instance.new("Frame")
+FOV_Frame.BackgroundTransparency = 1
+FOV_Frame.AnchorPoint  = Vector2.new(0.5, 0.5)
+FOV_Frame.Position     = UDim2.new(0.5, 0, 0.5, 0)
+FOV_Frame.Size         = UDim2.new(0, Aimbot.FOV*2, 0, Aimbot.FOV*2)
+FOV_Frame.Visible      = false
+FOV_Frame.Parent       = FOV_Gui
+
+local FOV_Stroke = Instance.new("UIStroke")
+FOV_Stroke.Thickness    = 2.5
+FOV_Stroke.Color        = Aimbot.FOV_Color
+FOV_Stroke.Transparency = 0.25
+FOV_Stroke.Parent       = FOV_Frame
+
+Instance.new("UICorner", FOV_Frame).CornerRadius = UDim.new(1, 0)
+
+local function UpdateFOV()
+    FOV_Frame.Size    = UDim2.new(0, Aimbot.FOV*2, 0, Aimbot.FOV*2)
+    FOV_Frame.Visible = Aimbot.FOV_Enabled and Aimbot.Enabled
+    FOV_Stroke.Color  = Aimbot.FOV_Color
+end
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                   CORE AIMBOT                           │
+-- └─────────────────────────────────────────────────────────┘
+local function GetTarget()
+    local best, bestDist = nil, Aimbot.FOV
+    local vCX = Camera.ViewportSize.X / 2
+    local vCY = Camera.ViewportSize.Y / 2
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        local char = plr.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        if Aimbot.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+
+        local part = char:FindFirstChild(Aimbot.AimPart) or char:FindFirstChild("HumanoidRootPart")
+        if not part then continue end
+
+        local pos = part.Position
+        if Aimbot.Prediction then
+            local vel = part:IsA("BasePart") and part.AssemblyLinearVelocity or Vector3.zero
+            pos = pos + vel * Aimbot.PredictionAmount
+        end
+
+        local sp, onScreen = Camera:WorldToViewportPoint(pos)
+        if not onScreen then continue end
+
+        local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(vCX, vCY)).Magnitude
+        if d >= bestDist then continue end
+
+        if Aimbot.VisibleCheck then
+            local rp = RaycastParams.new()
+            rp.FilterDescendantsInstances = {LocalPlayer.Character}
+            rp.FilterType = Enum.RaycastFilterType.Exclude
+            local res = Workspace:Raycast(Camera.CFrame.Position, pos - Camera.CFrame.Position, rp)
+            if res and not res.Instance:IsDescendantOf(char) then continue end
+        end
+
+        bestDist = d
+        best     = pos
+    end
+    return best
+end
+
+RunService.Heartbeat:Connect(function()
+    UpdateFOV()
+
+    local shouldAim = Aimbot.Enabled and
+        (Aimbot.ToggleMode or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
+
+    if not shouldAim then
+        FOV_Stroke.Color = Aimbot.FOV_Color
+        return
+    end
+
+    local target = GetTarget()
+    if target then
+        FOV_Stroke.Color = Aimbot.FOV_LockedColor
+        local look = CFrame.lookAt(Camera.CFrame.Position, target)
+        Camera.CFrame = Camera.CFrame:Lerp(look, 1 / math.max(1, Aimbot.Smoothness))
+    else
+        FOV_Stroke.Color = Aimbot.FOV_Color
+    end
+end)
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │              CREATION DE LA FENETRE                     │
+-- └─────────────────────────────────────────────────────────┘
+local Window = Library:CreateWindow({
+    Title        = "LSX UI | V1.0",
+    Center       = true,
+    AutoShow     = true,
+    TabPadding   = 8,
+    MenuFadeTime = 0.2
+})
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                    ONGLET ESP                           │
+-- └─────────────────────────────────────────────────────────┘
+local TabESP    = Window:AddTab("ESP")
+local EspLeft   = TabESP:AddLeftGroupbox("Activation")
+local EspMid    = TabESP:AddLeftGroupbox("Elements")
+local EspRight  = TabESP:AddRightGroupbox("Colors")
+local EspRight2 = TabESP:AddRightGroupbox("Settings")
+
+EspLeft:AddToggle("ESPEnabled", {
+    Text     = "Enable ESP",
+    Default  = false,
+    Callback = function(v) ESP.Enabled = v end
+})
+EspLeft:AddToggle("ESPTeamCheck", {
+    Text     = "Team Check",
+    Default  = false,
+    Callback = function(v) ESP.TeamCheck = v end
+})
+
+EspMid:AddToggle("ESPBox", {
+    Text     = "Boxes",
+    Default  = false,
+    Callback = function(v) ESP.Box.Enabled = v end
+})
+EspMid:AddToggle("ESPBoxFill", {
+    Text     = "Box Fill",
+    Default  = false,
+    Callback = function(v) ESP.BoxFill.Enabled = v end
+})
+EspMid:AddToggle("ESPBoxOutline", {
+    Text     = "Box Outline",
+    Default  = true,
+    Callback = function(v) ESP.Box.Outline = v end
+})
+EspMid:AddToggle("ESPSkeleton", {
+    Text     = "Skeleton",
+    Default  = false,
+    Callback = function(v) ESP.Skeleton.Enabled = v end
+})
+EspMid:AddToggle("ESPNames", {
+    Text     = "Names",
+    Default  = false,
+    Callback = function(v) ESP.Name.Enabled = v end
+})
+EspMid:AddToggle("ESPHealthBar", {
+    Text     = "Health Bar",
+    Default  = false,
+    Callback = function(v) ESP.HealthBar.Enabled = v end
+})
+EspMid:AddToggle("ESPDistance", {
+    Text     = "Distance",
+    Default  = false,
+    Callback = function(v) ESP.Distance.Enabled = v end
+})
+EspMid:AddToggle("ESPTracers", {
+    Text     = "Tracers",
+    Default  = false,
+    Callback = function(v) ESP.Tracer.Enabled = v end
+})
+
+EspRight:AddColorPicker("ESPBoxColor", {
+    Default  = ESP.Box.Color,
+    Title    = "Box Color",
+    Callback = function(v) ESP.Box.Color = v end
+})
+EspRight:AddColorPicker("ESPFillColor", {
+    Default  = ESP.BoxFill.Color,
+    Title    = "Fill Color",
+    Callback = function(v) ESP.BoxFill.Color = v end
+})
+EspRight:AddColorPicker("ESPNameColor", {
+    Default  = ESP.Name.Color,
+    Title    = "Name Color",
+    Callback = function(v) ESP.Name.Color = v end
+})
+EspRight:AddColorPicker("ESPDistColor", {
+    Default  = ESP.Distance.Color,
+    Title    = "Distance Color",
+    Callback = function(v) ESP.Distance.Color = v end
+})
+EspRight:AddColorPicker("ESPTracerColor", {
+    Default  = ESP.Tracer.Color,
+    Title    = "Tracer Color",
+    Callback = function(v) ESP.Tracer.Color = v end
+})
+EspRight:AddColorPicker("ESPSkeletonColor", {
+    Default  = ESP.Skeleton.Color,
+    Title    = "Skeleton Color",
+    Callback = function(v) ESP.Skeleton.Color = v end
+})
+
+EspRight2:AddDropdown("ESPTracerOrigin", {
+    Values   = {"Bottom", "Center", "Mouse"},
+    Default  = "Bottom",
+    Text     = "Tracer Origin",
+    Callback = function(v) ESP.Tracer.Origin = v end
+})
+EspRight2:AddSlider("ESPMaxDist", {
+    Text     = "Max Distance",
+    Default  = 2000,
+    Min      = 100,
+    Max      = 5000,
+    Rounding = 0,
+    Suffix   = " studs",
+    Callback = function(v) ESP.LimitDistance = v end
+})
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                   ONGLET CHAMS                          │
+-- └─────────────────────────────────────────────────────────┘
+local TabChams   = Window:AddTab("Chams")
+local ChamsLeft  = TabChams:AddLeftGroupbox("Chams")
+local ChamsRight = TabChams:AddRightGroupbox("Chams Colors")
+
+ChamsLeft:AddToggle("ChamsEnabled", {
+    Text     = "Enable Chams",
+    Default  = false,
+    Callback = function(v) ESP.Chams.Enabled = v end
+})
+ChamsLeft:AddSlider("ChamsFillTransp", {
+    Text     = "Fill Transparency",
+    Default  = 50,
+    Min      = 0,
+    Max      = 100,
+    Rounding = 0,
+    Suffix   = "%",
+    Callback = function(v) ESP.Chams.FillTransparency = v / 100 end
+})
+ChamsLeft:AddSlider("ChamsOutTransp", {
+    Text     = "Outline Transparency",
+    Default  = 0,
+    Min      = 0,
+    Max      = 100,
+    Rounding = 0,
+    Suffix   = "%",
+    Callback = function(v) ESP.Chams.OutlineTransparency = v / 100 end
+})
+
+ChamsRight:AddColorPicker("ChamsFillColor", {
+    Default  = ESP.Chams.FillColor,
+    Title    = "Fill Color",
+    Callback = function(v) ESP.Chams.FillColor = v end
+})
+ChamsRight:AddColorPicker("ChamsOutlineColor", {
+    Default  = ESP.Chams.OutlineColor,
+    Title    = "Outline Color",
+    Callback = function(v) ESP.Chams.OutlineColor = v end
+})
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                  ONGLET AIMBOT                          │
+-- └─────────────────────────────────────────────────────────┘
+local TabAimbot = Window:AddTab("Aimbot")
+local AimLeft   = TabAimbot:AddLeftGroupbox("Aimbot")
+local AimLeft2  = TabAimbot:AddLeftGroupbox("Checks")
+local AimRight  = TabAimbot:AddRightGroupbox("FOV")
+local AimRight2 = TabAimbot:AddRightGroupbox("FOV Colors")
+
+AimLeft:AddToggle("AimEnabled", {
+    Text     = "Enable Aimbot",
+    Default  = false,
+    Callback = function(v) Aimbot.Enabled = v end
+})
+AimLeft:AddToggle("AimToggle", {
+    Text     = "Toggle Mode (Mobile)",
+    Default  = false,
+    Callback = function(v) Aimbot.ToggleMode = v end
+})
+AimLeft:AddDropdown("AimPart", {
+    Values   = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+    Default  = "Head",
+    Text     = "Aim Part",
+    Callback = function(v) Aimbot.AimPart = v end
+})
+AimLeft:AddSlider("AimSmooth", {
+    Text     = "Smoothness",
+    Default  = 10,
+    Min      = 1,
+    Max      = 50,
+    Rounding = 0,
+    Callback = function(v) Aimbot.Smoothness = v end
+})
+AimLeft:AddToggle("AimPred", {
+    Text     = "Prediction",
+    Default  = false,
+    Callback = function(v) Aimbot.Prediction = v end
+})
+AimLeft:AddSlider("AimPredAmt", {
+    Text     = "Prediction Amount",
+    Default  = 142,
+    Min      = 0,
+    Max      = 500,
+    Rounding = 0,
+    Suffix   = "ms",
+    Callback = function(v) Aimbot.PredictionAmount = v / 1000 end
+})
+
+AimLeft2:AddToggle("AimTeamCheck", {
+    Text     = "Team Check",
+    Default  = false,
+    Callback = function(v) Aimbot.TeamCheck = v end
+})
+AimLeft2:AddToggle("AimWallCheck", {
+    Text     = "Visible Check",
+    Default  = false,
+    Callback = function(v) Aimbot.VisibleCheck = v end
+})
+
+AimRight:AddToggle("FOVVisible", {
+    Text     = "Show FOV Circle",
+    Default  = false,
+    Callback = function(v)
+        Aimbot.FOV_Enabled = v
+        UpdateFOV()
+    end
+})
+AimRight:AddSlider("FOVSize", {
+    Text     = "FOV Size",
+    Default  = 160,
+    Min      = 10,
+    Max      = 600,
+    Rounding = 0,
+    Callback = function(v)
+        Aimbot.FOV = v
+        UpdateFOV()
+    end
+})
+
+AimRight2:AddColorPicker("FOVColor", {
+    Default  = Aimbot.FOV_Color,
+    Title    = "FOV Color",
+    Callback = function(v)
+        Aimbot.FOV_Color = v
+        UpdateFOV()
+    end
+})
+AimRight2:AddColorPicker("FOVLockedColor", {
+    Default  = Aimbot.FOV_LockedColor,
+    Title    = "Locked Color",
+    Callback = function(v) Aimbot.FOV_LockedColor = v end
+})
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                 ONGLET SETTINGS                         │
+-- └─────────────────────────────────────────────────────────┘
+local TabSettings   = Window:AddTab("Settings")
+local SettingsLeft  = TabSettings:AddLeftGroupbox("Menu")
+local SettingsRight = TabSettings:AddRightGroupbox("Theme")
+
+SettingsLeft:AddKeybind("MenuKeybind", {
+    Text    = "Toggle UI",
+    Default = "RightShift",
+    Mode    = "Toggle",
+})
+
+-- SaveManager
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreFlags({ "MenuKeybind" })
+SaveManager:BuildConfigSection(TabSettings)
+
+-- ThemeManager
+ThemeMgr:SetLibrary(Library)
+ThemeMgr:AttachToGroupbox(SettingsRight)
+
+-- ┌─────────────────────────────────────────────────────────┐
+-- │                   FINALISATION                          │
+-- └─────────────────────────────────────────────────────────┘
+Library:SetWatermark("LSX UI  |  V1.0")
+Library.ToggleKeybind = Library.Flags.MenuKeybind
+
+SaveManager:LoadAutoloadConfig()
